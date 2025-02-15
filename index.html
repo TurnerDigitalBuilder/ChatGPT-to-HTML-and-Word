@@ -6,10 +6,71 @@
   <script src="https://cdn.jsdelivr.net/npm/markdown-it/dist/markdown-it.min.js"></script>
   <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    textarea { width: 100%; height: 200px; }
-    #preview { border: 1px solid #ccc; padding: 10px; margin-top: 20px; }
-    button { margin-right: 10px; }
+    body { 
+      font-family: "Inter", "Helvetica Neue", sans-serif; 
+      padding: 20px; 
+      background: #f0f0f0;
+    }
+    textarea { 
+      width: 100%; 
+      height: 200px; 
+      box-sizing: border-box;
+    }
+    #preview { 
+      border: 1px solid #ccc; 
+      padding: 20px; 
+      margin-top: 20px;
+      background: white;
+      width: 8.5in; /* Standard Word doc width */
+      margin-left: auto;
+      margin-right: auto;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      line-height: 1.6;
+    }
+    #preview p { 
+      margin-bottom: 1em; 
+    }
+    button { 
+      margin-right: 10px; 
+    }
+    /* Style links to be light grey without the default underline */
+    a {
+      color: #999;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    /* Style for the outer parentheses */
+    .outer-paren {
+      color: #999;
+    }
+    /* Table styling */
+    #preview .table-container {
+      overflow-x: auto;
+      margin-bottom: 1em;
+    }
+    #preview table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    #preview th,
+    #preview td {
+      padding: 8px;
+      border: 1px solid #ccc;
+      word-wrap: break-word;
+      font-size: 0.9em;  /* Smaller font size for table cells */
+    }
+    /* Table head and cell alignment */
+    #preview th {
+      text-align: left;
+      vertical-align: bottom;
+    }
+    #preview td {
+      text-align: left;
+      vertical-align: top;
+    }
   </style>
 </head>
 <body>
@@ -21,14 +82,137 @@
   <div id="preview"></div>
 
   <script>
-    const md = window.markdownit();
+    // Initialize markdown-it
+    const md = window.markdownit({
+      html: true,
+      linkify: true,
+      typographer: true
+    });
 
+    // Custom plugin to modify link rendering:
+    // - Display the URL domain as the link text
+    // - Store the original text as a tooltip via the title attribute
+    function linkDomainPlugin(md) {
+      const defaultLinkOpen = md.renderer.rules.link_open || function(tokens, idx, options, env, self) {
+        return self.renderToken(tokens, idx, options);
+      };
+      const defaultLinkClose = md.renderer.rules.link_close || function(tokens, idx, options, env, self) {
+        return self.renderToken(tokens, idx, options);
+      };
+      const defaultText = md.renderer.rules.text || function(tokens, idx, options, env, self) {
+        return tokens[idx].content;
+      };
+
+      md.renderer.rules.link_open = function(tokens, idx, options, env, self) {
+        const token = tokens[idx];
+        const hrefIndex = token.attrIndex('href');
+        let href = '';
+        if (hrefIndex >= 0) {
+          href = token.attrs[hrefIndex][1];
+        }
+        // Extract the domain
+        let domain = href;
+        try {
+          const url = new URL(href);
+          domain = url.hostname;
+        } catch (e) {
+          // fallback if URL parsing fails
+        }
+        // Gather the original link text
+        let originalText = '';
+        for (let i = idx + 1; i < tokens.length; i++) {
+          if (tokens[i].type === 'text') {
+            originalText += tokens[i].content;
+          } else if (tokens[i].type === 'link_close') {
+            break;
+          }
+        }
+        // Set the title attribute for the hover tooltip
+        token.attrSet('title', originalText);
+        // Flag environment for our text renderer to output the domain instead of the original text
+        env._inLink = true;
+        env._linkDomain = domain;
+        return defaultLinkOpen(tokens, idx, options, env, self);
+      };
+
+      md.renderer.rules.text = function(tokens, idx, options, env, self) {
+        if (env._inLink && env._linkDomain) {
+          const output = env._linkDomain;
+          env._linkDomain = null; // only output once per link
+          return output;
+        }
+        return defaultText(tokens, idx, options, env, self);
+      };
+
+      md.renderer.rules.link_close = function(tokens, idx, options, env, self) {
+        env._inLink = false;
+        env._linkDomain = null;
+        return defaultLinkClose(tokens, idx, options, env, self);
+      };
+    }
+
+    md.use(linkDomainPlugin);
+
+    // Function to wrap adjacent outer parentheses (if they exist as text nodes) in a span
+    function wrapAdjacentParentheses(container) {
+      const anchors = container.querySelectorAll('a');
+      anchors.forEach(anchor => {
+        // Check previous sibling for an opening parenthesis "("
+        let prev = anchor.previousSibling;
+        if (prev && prev.nodeType === Node.TEXT_NODE) {
+          // Look for a "(" at the end of the text node (possibly with some whitespace)
+          const match = prev.textContent.match(/(.*?)(\s*\()\s*$/);
+          if (match) {
+            prev.textContent = match[1];
+            const span = document.createElement('span');
+            span.className = 'outer-paren';
+            span.textContent = match[2];
+            anchor.parentNode.insertBefore(span, anchor);
+          }
+        }
+        // Check next sibling for a closing parenthesis ")"
+        let next = anchor.nextSibling;
+        if (next && next.nodeType === Node.TEXT_NODE) {
+          const match = next.textContent.match(/^\s*(\))(\s*.*)/);
+          if (match) {
+            next.textContent = match[2];
+            const span = document.createElement('span');
+            span.className = 'outer-paren';
+            span.textContent = match[1];
+            if (anchor.nextSibling) {
+              anchor.parentNode.insertBefore(span, anchor.nextSibling);
+            } else {
+              anchor.parentNode.appendChild(span);
+            }
+          }
+        }
+      });
+    }
+
+    // Function to wrap tables in a scrollable container
+    function wrapTables(container) {
+      const tables = container.querySelectorAll("table");
+      tables.forEach(table => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "table-container";
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+      });
+    }
+
+    // Button to preview HTML
     document.getElementById('previewBtn').addEventListener('click', () => {
       const mdText = document.getElementById('markdownInput').value;
       const htmlContent = md.render(mdText);
-      document.getElementById('preview').innerHTML = htmlContent;
+      const previewDiv = document.getElementById('preview');
+      previewDiv.innerHTML = htmlContent;
+      // Wrap tables in a scrollable container
+      wrapTables(previewDiv);
+      // Wrap outer parentheses for links (if any)
+      wrapAdjacentParentheses(previewDiv);
     });
 
+    // Button to export to Word
     document.getElementById('exportBtn').addEventListener('click', () => {
       const content = document.getElementById('preview').innerHTML;
       const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' " +
