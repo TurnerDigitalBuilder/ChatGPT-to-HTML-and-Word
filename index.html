@@ -30,8 +30,16 @@
     #preview p { 
       margin-bottom: 1em; 
     }
+    /* Flex container for the buttons and character count */
+    #controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
     button { 
-      margin-right: 10px; 
+      margin-right: 0; /* gap is handled by flex container */
     }
     /* Link styling */
     a {
@@ -74,14 +82,25 @@
   </style>
 </head>
 <body>
-  <h1>Markdown Preview and Converter</h1>
+  <h3>Markdown Converter</h3>
   <textarea id="markdownInput" placeholder="Paste your markdown here..."></textarea>
-  <br>
-  <button id="previewBtn">Preview HTML</button>
-  <button id="exportBtn">Export to Word</button>
+  
+  <div id="controls">
+    <button id="previewBtn">Preview HTML</button>
+    <button id="exportBtn">Export to Word</button>
+    <span id="charCount">0 characters</span>
+  </div>
+  
   <div id="preview"></div>
 
   <script>
+    // Update character count with formatted number (using commas)
+    const markdownInput = document.getElementById('markdownInput');
+    const charCount = document.getElementById('charCount');
+    markdownInput.addEventListener('input', function() {
+      charCount.textContent = Number(markdownInput.value.length).toLocaleString() + " characters";
+    });
+
     // Initialize markdown-it with options.
     const md = window.markdownit({
       html: true,
@@ -202,7 +221,7 @@
 
     // Preview button: Render markdown, then wrap tables and parentheses.
     document.getElementById('previewBtn').addEventListener('click', () => {
-      const mdText = document.getElementById('markdownInput').value;
+      const mdText = markdownInput.value;
       const htmlContent = md.render(mdText);
       const previewDiv = document.getElementById('preview');
       previewDiv.innerHTML = htmlContent;
